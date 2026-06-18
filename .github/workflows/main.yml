@@ -1,0 +1,36 @@
+name: Daily Trading Dashboard
+
+on:
+  schedule:
+    - cron: '30 13 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢查程式碼
+        uses: actions/checkout@v3
+
+      - name: 設定 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安裝套件
+        run: |
+          pip install yfinance pandas numpy
+
+      - name: 執行腳本
+        run: python Strategy_V7.py
+
+      - name: 自動提交更新
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add Trading_Dashboard.html
+          git commit -m "Auto Update Dashboard" || exit 0
+          git push

@@ -90,7 +90,11 @@ def track_my_holdings(df, symbol, entry_date, entry_price):
 print(f"🚀 啟動 V7 ({current_tw_time} 台灣時間) 讀取數據中...")
 
 # --- [強化點 2] 強制建立全新的 yfinance Session 避免抓到舊快取 ---
+# 增加 User-Agent 偽裝成真人瀏覽器，避免被 Yahoo Finance 阻擋 (解決「資料源異常」的核心)
 session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
 
 data_dict = {}
 env_dict = {}
@@ -111,11 +115,14 @@ all_tickers_to_fetch = list(set(TICKERS + list(MY_PORTFOLIO.keys()) + BREADTH_TI
 for symbol in all_tickers_to_fetch:
     try:
         df = yf.download(symbol, period=PERIOD, progress=False, session=session)
-        if df.empty: continue
+        if df.empty: 
+            print(f"⚠️ {symbol} 回傳空資料")
+            continue
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         df = calculate_indicators(df)
         data_dict[symbol] = df
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ 無法抓取個股 {symbol} 資料: {e}")
         pass
 
 # --- [強化點 3] 確保取得最新日期邏輯更穩固 ---

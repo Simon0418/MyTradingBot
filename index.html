@@ -1,0 +1,74 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>V7 雙劍合璧資產管家</title>
+    <style>
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Consolas', 'Courier New', monospace, 'Microsoft JhengHei';
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .update-time {
+            text-align: center;
+            color: #8b949e;
+            font-size: 0.9em;
+            margin-top: -10px;
+            margin-bottom: 20px;
+        }
+        h1 { color: #58a6ff; text-align: center; border-bottom: 2px dashed #30363d; padding-bottom: 15px; }
+        h2 { color: #79c0ff; margin-top: 40px; font-size: 1.2em; }
+        .panel {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .good { color: #3fb950; font-weight: bold; }
+        .bad { color: #f85149; font-weight: bold; }
+        .highlight { color: #d2a8ff; font-weight: bold; }
+        
+        .styled-table { width: 100%; border-collapse: collapse; font-size: 1em; text-align: center; }
+        .styled-table thead tr { background-color: #21262d; color: #8b949e; border-bottom: 2px solid #30363d; }
+        .styled-table th, .styled-table td { padding: 12px 15px; }
+        .styled-table tbody tr { border-bottom: 1px solid #21262d; }
+        .styled-table tbody tr:hover { background-color: #1c2128; }
+        
+        /* 增加手機版適應性 */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .styled-table { font-size: 0.85em; }
+            .styled-table th, .styled-table td { padding: 8px 5px; }
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 V7 雙劍合璧資產管家 (無法取得日期 (資料源異常))</h1>
+    <!-- 新增：網頁的更新時間標示，確保我們知道這是最新執行的結果 -->
+    <div class="update-time">系統最後執行時間 (台灣)：2026-06-23 01:15:01</div>
+    
+    <div class="panel">
+        <h2>🌍 【今日大環境測候站】</h2>
+        <p>📊 標普500 (SPY)： <span class='bad'>🔴 跌破200MA</span> (現價: 0)</p>
+        <p>😨 恐慌指數 (VIX)： <span class='bad'>🔴 恐慌</span> (現價: 0)</p>
+        <p>📈 大盤寬度 (站上50MA比例)： <span class='bad'>🔴 外強中乾</span> (0%)</p>
+        <hr style="border-color: #30363d;">
+        <p>🤖 系統判定今日採用策略： <span class="highlight">V5 (恐慌抄底)</span></p>
+        <p>💡 說明：⛈️ 震盪防禦期：大盤轉弱或外強中乾，只買極度超賣的龍頭</p>
+    </div>
+    <div class="panel">
+        <h2>🛡️ 【我的真實持股追蹤】</h2>
+        <p style='color: #888; text-align: center;'>目前 MY_PORTFOLIO 中沒有設定持股。</p>
+    </div>
+    <div class="panel">
+        <h2>🎯 【市場最新進場雷達】 (近 5 天內觸發)</h2>
+        <p style='color: #888; text-align: center;'>近期無符合條件的進場標的，請保留現金耐心等待。</p>
+    </div>
+</body>
+</html>

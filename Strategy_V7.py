@@ -2,22 +2,18 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import webbrowser
+import pytz
 import os
-import pathlib
+import requests # 新增：為了清空 yfinance 快取
 
 # ==========================================
-# 🎯 1. 中央控制面板 (你每天只需要更新這裡！)
+# 🎯 1. 中央控制面板
 # ==========================================
-
-# --- A. 我的真實持股區 ---
-# 買進後請將股票代碼、進場日、成本價填入此處，系統會自動幫你計算每日移動防守線
 MY_PORTFOLIO = {
     "TSM": {"entry_date": "2025-04-18", "entry_price": 163.33},
     "GOOGL": {"entry_date": "2026-06-12", "entry_price": 362.190},
-    }
+}
 
-# --- B. 交易池 (你想尋找進場機會的雷達名單) ---
 TICKERS = [
      "QLD","AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "BRK-B", "LLY", "AVGO", "TSLA",
     "JPM", "WMT", "UNH", "V", "XOM", "MA", "PG", "JNJ", "COST", "HD",
@@ -26,41 +22,27 @@ TICKERS = [
     "TXN", "NOW", "UBER", "GE", "CAT", "AXP", "ISRG", "PM", "GS", "BA"
 ]
 
-# --- C. 策略核心參數 (回測最佳化後的勝率甜蜜點) ---
 STRATEGY_PARAMS = {
-    # 大環境判定參數
-    'VIX_THRESHOLD': 30,                # VIX 恐慌界線 
-    'BREADTH_THRESHOLD': 0.60,          # 大盤寬度健康門檻 (0.50代表50%標的站上季線)
-    
-    # 風險與出場參數
-    'INIT_STOP_MULT': 1.5,              # 買進時的初始停損 ATR 倍數 
-    'TRAIL_STOP_MULT': 2.5,             # 獲利後的吊燈停利 ATR 倍數 
-    
-    # V6 順勢突破參數
-    'V6_KD_MAX': 60,                    # V6 允許進場的 KD 數值上限 
-    
-    # V5 恐慌抄底參數
-    'V5_OVERSOLD_PCT': 0.7,            # 跌破年線的極端乖離率 (0.78 代表跌破年線 22%)
-    'V5_KD_MAX': 25                    # V5 抄底專用 KD 黃金交叉上限 
+    'VIX_THRESHOLD': 30, 
+    'BREADTH_THRESHOLD': 0.60, 
+    'INIT_STOP_MULT': 1.5, 
+    'TRAIL_STOP_MULT': 2.5, 
+    'V6_KD_MAX': 60, 
+    'V5_OVERSOLD_PCT': 0.7, 
+    'V5_KD_MAX': 25 
 }
 
-
 # ==========================================
-# ⚙️ 2. 底層引擎區 (以下程式碼為系統核心，請勿更動)
+# ⚙️ 2. 底層引擎區 
 # ==========================================
-
-# 獨立的環境感測池 (專門用來計算大盤寬度的標普前 50 大，確保大盤判定客觀)
-BREADTH_TICKERS = [
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "BRK-B", "LLY", "AVGO", "TSLA",
-    "JPM", "WMT", "UNH", "V", "XOM", "MA", "PG", "JNJ", "COST", "HD",
-    "ORCL", "MRK", "ABBV", "CVX", "CRM", "BAC", "KO", "NFLX", "PEP", "AMD",
-    "LIN", "TMO", "WFC", "DIS", "CSCO", "MCD", "INTU", "QCOM", "AMAT", "IBM",
-    "TXN", "NOW", "UBER", "GE", "CAT", "AXP", "ISRG", "PM", "GS", "BA"
-]
-
+BREADTH_TICKERS = TICKERS.copy()
 MARKET_TICKERS = ["SPY", "^VIX"] 
 PERIOD = "2y"
 DAYS_TO_SHOW = 5
+
+# --- [強化點 1] 確保取得台灣現在時間，方便除錯 ---
+tw_tz = pytz.timezone('Asia/Taipei')
+current_tw_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 
 def calculate_indicators(df):
     low_min = df['Low'].rolling(window=14).min()
@@ -70,7 +52,6 @@ def calculate_indicators(df):
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['MA_50'] = df['Close'].rolling(window=50).mean()
     df['MA_200'] = df['Close'].rolling(window=200).mean()
-    df['Rolling_Min_20'] = df['Low'].rolling(window=20).min()
     
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
@@ -87,7 +68,6 @@ def track_my_holdings(df, symbol, entry_date, entry_price):
     current_close = held_df['Close'].iloc[-1]
     current_atr = held_df['ATR'].iloc[-1] if not pd.isna(held_df['ATR'].iloc[-1]) else (current_close * 0.02)
     
-    # 💡 讀取控制面板參數
     trailing_stop = highest_close - (STRATEGY_PARAMS['TRAIL_STOP_MULT'] * current_atr)
     profit_pct = ((current_close - entry_price) / entry_price) * 100
     
@@ -107,26 +87,30 @@ def track_my_holdings(df, symbol, entry_date, entry_price):
         '狀態': status
     }
 
-# --- 執行主程式 ---
-print("🚀 啟動 V7 雙劍合璧資產管家 (讀取大盤環境與個股數據中...)")
+print(f"🚀 啟動 V7 ({current_tw_time} 台灣時間) 讀取數據中...")
+
+# --- [強化點 2] 強制建立全新的 yfinance Session 避免抓到舊快取 ---
+session = requests.Session()
 
 data_dict = {}
 env_dict = {}
 
+# 抓取大盤資料並檢查
 for symbol in MARKET_TICKERS:
     try:
-        df = yf.download(symbol, period=PERIOD, progress=False)
+        # 加入 session 強制重新請求
+        df = yf.download(symbol, period=PERIOD, progress=False, session=session)
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        if symbol == "SPY":
+        if symbol == "SPY" and not df.empty:
             df['MA_200'] = df['Close'].rolling(window=200).mean()
         env_dict[symbol] = df
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"⚠️ 無法抓取大盤 {symbol} 資料: {e}")
 
 all_tickers_to_fetch = list(set(TICKERS + list(MY_PORTFOLIO.keys()) + BREADTH_TICKERS))
 for symbol in all_tickers_to_fetch:
     try:
-        df = yf.download(symbol, period=PERIOD, progress=False)
+        df = yf.download(symbol, period=PERIOD, progress=False, session=session)
         if df.empty: continue
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         df = calculate_indicators(df)
@@ -134,18 +118,40 @@ for symbol in all_tickers_to_fetch:
     except Exception:
         pass
 
+# --- [強化點 3] 確保取得最新日期邏輯更穩固 ---
 latest_date = None
-for sym in TICKERS:
-    if sym in data_dict and not data_dict[sym].empty:
-        latest_date = data_dict[sym].index[-1]
-        break
+# 優先以 SPY (大盤) 的最後一天為主，如果沒有才找個股
+if "SPY" in env_dict and not env_dict["SPY"].empty:
+    latest_date = env_dict["SPY"].index[-1]
+else:
+    for sym in TICKERS:
+        if sym in data_dict and not data_dict[sym].empty:
+            latest_date = data_dict[sym].index[-1]
+            break
 
 if latest_date is None:
-    print("❌ 無法取得最新交易日期數據，請檢查網路連線。")
-    exit()
+    print("❌ 嚴重錯誤：完全無法取得任何交易數據。")
+    # 給予一個假日期讓 HTML 可以產出並顯示錯誤
+    latest_date_str = "無法取得日期 (資料源異常)"
+else:
+    latest_date_str = latest_date.strftime('%Y-%m-%d')
 
-spy_latest = env_dict["SPY"].iloc[-1]
-vix_latest = env_dict["^VIX"].iloc[-1]
+
+# 預設大盤環境變數 (防呆機制)
+is_spy_uptrend = False
+is_vix_calm = False
+spy_close = 0
+vix_close = 0
+
+if "SPY" in env_dict and not env_dict["SPY"].empty:
+    spy_latest = env_dict["SPY"].iloc[-1]
+    spy_close = spy_latest['Close']
+    is_spy_uptrend = spy_latest['Close'] > spy_latest['MA_200']
+
+if "^VIX" in env_dict and not env_dict["^VIX"].empty:
+    vix_latest = env_dict["^VIX"].iloc[-1]
+    vix_close = vix_latest['Close']
+    is_vix_calm = vix_latest['Close'] < STRATEGY_PARAMS['VIX_THRESHOLD']
 
 stocks_above_50ma = 0
 valid_breadth_stocks = 0
@@ -158,10 +164,6 @@ for sym in BREADTH_TICKERS:
                 stocks_above_50ma += 1
 
 breadth_pct = (stocks_above_50ma / valid_breadth_stocks) if valid_breadth_stocks > 0 else 0
-
-# 💡 讀取控制面板參數
-is_spy_uptrend = spy_latest['Close'] > spy_latest['MA_200']
-is_vix_calm = vix_latest['Close'] < STRATEGY_PARAMS['VIX_THRESHOLD']
 is_breadth_healthy = breadth_pct >= STRATEGY_PARAMS['BREADTH_THRESHOLD']
 
 if is_spy_uptrend and is_vix_calm and is_breadth_healthy:
@@ -194,7 +196,6 @@ for symbol in TICKERS:
         signal_type = ""
         
         if current_regime == "V6 (順勢動能)":
-            # 💡 讀取控制面板參數
             is_strong_uptrend = (row['MA_50'] > row['MA_200']) and (row['Close'] > row['MA_200'])
             is_kd_turning_up = (prev_row['K'] < prev_row['D']) and (row['K'] > row['D']) and (row['K'] < STRATEGY_PARAMS['V6_KD_MAX'])
             is_breakout_20ema = (prev_row['Close'] <= prev_row['EMA_20']) and (row['Close'] > row['EMA_20'])
@@ -202,7 +203,6 @@ for symbol in TICKERS:
                 buy_signal = True
                 signal_type = "V6 強勢拉回表態"
         else:
-            # 💡 讀取控制面板參數
             is_deep_oversold = row['Close'] < (row['MA_200'] * STRATEGY_PARAMS['V5_OVERSOLD_PCT']) 
             is_uptrend = row['Close'] > row['MA_200']
             is_kd_golden_cross = (prev_row['K'] < prev_row['D']) and (row['K'] > row['D']) and (row['K'] < STRATEGY_PARAMS['V5_KD_MAX'])
@@ -213,7 +213,6 @@ for symbol in TICKERS:
                 
         if buy_signal:
             atr_val = row['ATR'] if not pd.isna(row['ATR']) else (row['Close'] * 0.02)
-            # 💡 讀取控制面板參數
             suggested_stop = row['Close'] - (STRATEGY_PARAMS['INIT_STOP_MULT'] * atr_val)
             new_opportunities.append({
                 '股票': symbol, 
@@ -227,7 +226,7 @@ for symbol in TICKERS:
 # ==========================================
 # 🌐 自動生成高質感 HTML 交易儀表板
 # ==========================================
-print("📸 正在為您生成專屬交易儀表板，請稍候...")
+print("📸 正在為您生成專屬交易儀表板...")
 
 if my_portfolio_status:
     df_my = pd.DataFrame(my_portfolio_status)
@@ -239,6 +238,8 @@ else:
 
 if new_opportunities:
     df_new = pd.DataFrame(new_opportunities).drop_duplicates(subset=['股票', '策略', '訊號日'], keep='last')
+    # 按照訊號日反向排序，最新的排在最前面
+    df_new = df_new.sort_values(by='訊號日', ascending=False)
     radar_html = df_new[['股票', '訊號日', '策略', '現價', '當前ATR', '建議防守線']].to_html(index=False, border=0, classes='styled-table')
 else:
     radar_html = "<p style='color: #888; text-align: center;'>近期無符合條件的進場標的，請保留現金耐心等待。</p>"
@@ -258,9 +259,16 @@ html_template = f"""
             background-color: #0d1117;
             color: #c9d1d9;
             font-family: 'Consolas', 'Courier New', monospace, 'Microsoft JhengHei';
-            padding: 40px;
+            padding: 20px;
             max-width: 1000px;
             margin: 0 auto;
+        }}
+        .update-time {{
+            text-align: center;
+            color: #8b949e;
+            font-size: 0.9em;
+            margin-top: -10px;
+            margin-bottom: 20px;
         }}
         h1 {{ color: #58a6ff; text-align: center; border-bottom: 2px dashed #30363d; padding-bottom: 15px; }}
         h2 {{ color: #79c0ff; margin-top: 40px; font-size: 1.2em; }}
@@ -281,21 +289,31 @@ html_template = f"""
         .styled-table th, .styled-table td {{ padding: 12px 15px; }}
         .styled-table tbody tr {{ border-bottom: 1px solid #21262d; }}
         .styled-table tbody tr:hover {{ background-color: #1c2128; }}
+        
+        /* 增加手機版適應性 */
+        @media (max-width: 768px) {{
+            body {{ padding: 10px; }}
+            .styled-table {{ font-size: 0.85em; }}
+            .styled-table th, .styled-table td {{ padding: 8px 5px; }}
+        }}
     </style>
 </head>
 <body>
-    <h1>🚀 V7 雙劍合璧資產管家 ({latest_date.strftime('%Y-%m-%d')})</h1>
+    <h1>🚀 V7 雙劍合璧資產管家 ({latest_date_str})</h1>
+    <!-- 新增：網頁的更新時間標示，確保我們知道這是最新執行的結果 -->
+    <div class="update-time">系統最後執行時間 (台灣)：{current_tw_time}</div>
+    
     <div class="panel">
         <h2>🌍 【今日大環境測候站】</h2>
-        <p>📊 標普500 (SPY)： {spy_display} (現價: {round(spy_latest['Close'], 2)})</p>
-        <p>😨 恐慌指數 (VIX)： {vix_display} (現價: {round(vix_latest['Close'], 2)})</p>
+        <p>📊 標普500 (SPY)： {spy_display} (現價: {round(spy_close, 2)})</p>
+        <p>😨 恐慌指數 (VIX)： {vix_display} (現價: {round(vix_close, 2)})</p>
         <p>📈 大盤寬度 (站上50MA比例)： {breadth_display} ({int(breadth_pct*100)}%)</p>
         <hr style="border-color: #30363d;">
         <p>🤖 系統判定今日採用策略： <span class="highlight">{current_regime}</span></p>
         <p>💡 說明：{regime_desc}</p>
     </div>
     <div class="panel">
-        <h2>🛡️ 【我的真實持股追蹤】 (每天請依照此防守線修改券商停損單)</h2>
+        <h2>🛡️ 【我的真實持股追蹤】</h2>
         {portfolio_html}
     </div>
     <div class="panel">
@@ -306,10 +324,9 @@ html_template = f"""
 </html>
 """
 
-file_path = os.path.abspath('Trading_Dashboard.html')
+# 將檔案存為 index.html，解決需輸入檔名的問題
+file_path = os.path.abspath('index.html')
 with open(file_path, 'w', encoding='utf-8') as f:
     f.write(html_template)
 
-print(f"✅ 儀表板已生成！正在為您開啟瀏覽器...")
-file_uri = pathlib.Path(file_path).as_uri()
-webbrowser.open(file_uri)
+print(f"✅ 儀表板已生成完成！(存檔為 index.html)")

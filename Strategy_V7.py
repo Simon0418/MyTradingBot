@@ -307,10 +307,8 @@ html_template = f"""
 </html>
 """
 
-file_path = os.path.abspath('Trading_Dashboard.html')
+file_path = os.path.abspath('index.html') 
 with open(file_path, 'w', encoding='utf-8') as f:
     f.write(html_template)
 
-print(f"✅ 儀表板已生成！正在為您開啟瀏覽器...")
-file_uri = pathlib.Path(file_path).as_uri()
-webbrowser.open(file_uri)
+print(f"✅ 儀表板已生成！")

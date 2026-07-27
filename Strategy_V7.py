@@ -14,7 +14,7 @@ import pathlib
 # 買進後請將股票代碼、進場日、成本價填入此處，系統會自動幫你計算每日移動防守線
 MY_PORTFOLIO = {
     "TSM": {"entry_date": "2025-04-18", "entry_price": 163.33},
-    "QLD": {"entry_date": "2026-07-10", "entry_price": 92.07},
+    "QLD": {"entry_date": "2026-07-10", "entry_price": 89.4},
 
     }
 
